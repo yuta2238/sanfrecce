@@ -2,68 +2,91 @@ import pandas as pd
 import numpy as np
 import joblib
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error
 
 def main():
     # ---------------------------------------------------------
-    # 1. データの準備（今回はダミーデータを生成します）
+    # 1. データの準備（時系列ラグ特徴量を含むダミーデータ）
     # ---------------------------------------------------------
     print("データの準備を行っています...")
-    
-    # サンプルとして100試合分のデータをランダムに生成
     np.random.seed(42)
+
+    # 基礎データ
     data = {
-        'opponent_past_ppg': np.random.uniform(0.0, 3.0, 100), # 過去の相性（平均獲得勝ち点）
-        'recent_5_points': np.random.randint(0, 16, 100),      # 直近5試合の勝ち点
-        'recent_xG': np.random.uniform(0.5, 3.0, 100),         # 直近5試合の平均得点期待値
-        'recent_xGA': np.random.uniform(0.5, 3.0, 100),        # 直近5試合の平均失点期待値
-        'result': np.random.choice([1, 0, -1], 100)            # 試合結果 (1:勝ち, 0:引き分け, -1:負け)
+        'opponent_past_ppg': np.random.uniform(0.0, 3.0, 100), # 過去の相性
+        'recent_xG': np.random.uniform(0.5, 3.0, 100),         # 直近平均得点期待値
+        'recent_xGA': np.random.uniform(0.5, 3.0, 100),        # 直近平均失点期待値
     }
+
+    # 【追加要素】過去5試合のスコア（時間遅れ・ラグ特徴量）
+    # GF = Goals For (得点), GA = Goals Against (失点)
+    for i in range(1, 6):
+        data[f'past_{i}_GF'] = np.random.randint(0, 4, 100) # i試合前の得点
+        data[f'past_{i}_GA'] = np.random.randint(0, 4, 100) # i試合前の失点
+
+    # 【変更要素】予測ターゲット（今回の試合の「得点」と「失点」）
+    data['target_GF'] = np.random.randint(0, 4, 100)
+    data['target_GA'] = np.random.randint(0, 4, 100)
+
     df = pd.DataFrame(data)
 
     # 特徴量（X）と目的変数（y）に分割
-    X = df.drop('result', axis=1)
-    y = df['result']
+    X = df.drop(['target_GF', 'target_GA'], axis=1)
+    y = df[['target_GF', 'target_GA']] # 2つの数値を同時に予測対象にする
 
     # 学習用データ(80%)とテスト用データ(20%)に分割
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # ---------------------------------------------------------
-    # 2. モデルの学習
+    # 2. モデルの学習（回帰モデルへ変更）
     # ---------------------------------------------------------
     print("AIモデルを学習させています...")
-    # ランダムフォレスト分類器を使用
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Classifier（分類）ではなく Regressor（回帰）を使用
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
     # ---------------------------------------------------------
     # 3. 予測と評価
     # ---------------------------------------------------------
-    print("テストデータで予測精度を評価します...\n")
+    print("テストデータでスコア予測精度を評価します...\n")
     y_pred = model.predict(X_test)
     
-    # 正解率の計算
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f"◆ モデルの正解率 (Accuracy): {accuracy * 100:.2f}%\n")
-    
-    # 詳細な評価レポート
-    print("◆ 分類レポート:")
-    print(classification_report(y_test, y_pred, target_names=['負け(-1)', '引き分け(0)', '勝ち(1)'], zero_division=0))
+    # 予測値は小数になるため、四捨五入して整数（スコア）にする
+    y_pred_rounded = np.round(y_pred).astype(int)
+    y_test_values = y_test.values
+
+    # 評価指標の計算（平均絶対誤差: MAE）
+    mae = mean_absolute_error(y_test_values, y_pred)
+    print(f"◆ 平均絶対誤差 (MAE): {mae:.2f} 点")
+    print("  ※予測スコアが実際のスコアから平均して何点ズレているかを示します\n")
+
+    # 予測スコアのサンプル表示
+    print("◆ 予測スコアのサンプル（最初の5件）:")
+    for i in range(5):
+        actual_gf, actual_ga = y_test_values[i]
+        pred_gf, pred_ga = y_pred_rounded[i]
+        
+        # 勝敗結果の判定テキスト
+        actual_res = "勝ち" if actual_gf > actual_ga else "負け" if actual_gf < actual_ga else "引分"
+        pred_res = "勝ち" if pred_gf > pred_ga else "負け" if pred_gf < pred_ga else "引分"
+        
+        print(f"  実際: {actual_gf} - {actual_ga} ({actual_res})  |  予測: {pred_gf} - {pred_ga} ({pred_res})")
 
     # ---------------------------------------------------------
     # 4. 特徴量の重要度を確認
     # ---------------------------------------------------------
-    # どの入力データが予測に最も貢献したかを確認します
-    print("◆ 特徴量の重要度:")
+    print("\n◆ 特徴量の重要度 (上位5つ):")
     importances = model.feature_importances_
-    for feature, importance in zip(X.columns, importances):
-        print(f" - {feature}: {importance:.3f}")
+    sorted_idx = np.argsort(importances)[::-1]
+    for idx in sorted_idx[:5]:
+        print(f" - {X.columns[idx]}: {importances[idx]:.3f}")
+
     # ---------------------------------------------------------
     # 5. 学習済みモデルの保存
     # ---------------------------------------------------------
-    joblib.dump(model, 'sanfrecce_model.pkl')
-    print("モデルを 'sanfrecce_model.pkl' として保存しました！")
+    joblib.dump(model, 'sanfrecce_score_model.pkl')
+    print("\nモデルを 'sanfrecce_score_model.pkl' として保存しました！")
 
 if __name__ == "__main__":
     main()
