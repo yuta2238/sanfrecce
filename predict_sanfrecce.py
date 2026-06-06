@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
@@ -58,6 +59,11 @@ def main():
     importances = model.feature_importances_
     for feature, importance in zip(X.columns, importances):
         print(f" - {feature}: {importance:.3f}")
+    # ---------------------------------------------------------
+    # 5. 学習済みモデルの保存
+    # ---------------------------------------------------------
+    joblib.dump(model, 'sanfrecce_model.pkl')
+    print("モデルを 'sanfrecce_model.pkl' として保存しました！")
 
 if __name__ == "__main__":
     main()
