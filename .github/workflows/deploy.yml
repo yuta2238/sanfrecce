@@ -14,12 +14,10 @@ jobs:
 
       - name: Push to HF
         env:
-          HF_TOKEN: ${{ secrets.GITHUB_SYNC }}
+          # 【重要】GitHubに保存した名前に一言一句合わせます
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} 
         run: |
           git remote remove hf || true
-          
-          # oauth を使った最新の認証URL
           git remote add hf https://oauth:$HF_TOKEN@huggingface.co/spaces/horihorisoccer/sanfrecce-predictor
-          
           git config --global http.postBuffer 524288000
           git push --force hf main
