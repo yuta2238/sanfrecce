@@ -13,9 +13,19 @@ jobs:
           fetch-depth: 0
           lfs: true
 
+      - name: Install Git LFS and configure
+        run: |
+          git lfs install
+
       - name: Push to HF
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_TOKEN: ${{ secrets.GITHUB_SYNC }} # GitHubに登録したSecret名に合わせてください
         run: |
-          git remote add hf https://yuta2238:$HF_TOKEN@huggingface.co/spaces/horihorisoccer/sanfrecce-predictor
+          # 以前登録した古い設定があれば一度クリアする
+          git remote remove hf || true
+          
+          # 接続先をユーザー名 horihorisoccer に合わせて設定
+          git remote add hf https://horihorisoccer:$HF_TOKEN@huggingface.co/spaces/horihorisoccer/sanfrecce-predictor
+          
+          # 【最重要】バイナリファイルをLFSとしてHugging Faceに正しく送信する設定
           git push --force hf main
