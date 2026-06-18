@@ -2,14 +2,14 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>サンフレッチェ広島 スコア予測システム</title>
+    <title>サンフレッチェ広島 スコア確率予測システム</title>
     <style>
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 40px; color: #333; }
         .container { max-width: 600px; background: white; margin: 0 auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         h1 { text-align: center; color: #4a2e80; margin-bottom: 30px; font-size: 24px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
-        input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        input[type="number"], select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         button { width: 100%; padding: 12px; background-color: #4a2e80; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: background 0.2s; }
         button:hover { background-color: #3b2466; }
@@ -18,13 +18,23 @@
         .lose { background-color: #fce8e6; border: 1px solid #ea4335; color: #c5221f; }
         .draw { background-color: #f1f3f4; border: 1px solid #9aa0a6; color: #3c4043; }
         .score { font-size: 48px; font-weight: bold; margin: 10px 0; }
+        .distribution-list { text-align: left; background: rgba(255,255,255,0.6); padding: 15px; border-radius: 6px; margin-top: 15px; }
+        .distribution-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 14px; }
+        .distribution-item:first-child { font-weight: bold; color: #000; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🟣 SANFRECCE SCORE PREDICTOR 🟣</h1>
+    <h1>🟣 SANFRECCE PROBABILITY PREDICTOR 🟣</h1>
     <form id="predictForm">
+        <div class="form-group">
+            <label>試合会場</label>
+            <select id="is_home" required>
+                <option value="1">ホーム（エディオンピースウイング広島）</option>
+                <option value="0">アウェイ（敵地）</option>
+            </select>
+        </div>
         <div class="form-group">
             <label>対戦相手との過去相性 (PPG: 0.0〜3.0)</label>
             <input type="number" id="opponent_past_ppg" step="0.1" value="1.5" required>
@@ -32,11 +42,11 @@
         <div class="grid-2">
             <div class="form-group">
                 <label>直近の得点期待値 (xG)</label>
-                <input type="number" id="recent_xG" step="0.1" value="1.8" required>
+                <input type="number" id="recent_xG" step="0.01" value="1.85" required>
             </div>
             <div class="form-group">
                 <label>直近の失点期待値 (xGA)</label>
-                <input type="number" id="recent_xGA" step="0.1" value="1.1" required>
+                <input type="number" id="recent_xGA" step="0.01" value="1.10" required>
             </div>
         </div>
         
@@ -54,22 +64,27 @@
             <div class="form-group"><label>5試合前: 失点</label><input type="number" id="past_5_GA" value="2" required></div>
         </div>
 
-        <button type="submit">スコアを予測する</button>
+        <button type="submit">確率分布からスコアを予測</button>
     </form>
 
     <div id="resultCard">
-        <h2 id="resultTitle">予測結果</h2>
+        <h2 id="resultTitle">最も確率が高い予測結果</h2>
         <div class="score" id="predictedScore">-</div>
-        <p id="rawMetrics"></p>
+        <p id="matchProbability"></p>
+        
+        <div class="distribution-list">
+            <h4 style="margin: 0 0 10px 0;">📊 起こりやすいスコア分布（TOP 5）</h4>
+            <div id="distributionContainer"></div>
+        </div>
     </div>
 </div>
 
 <script>
     document.getElementById('predictForm').addEventListener('submit', async (e) => {
-        e.preventDefault(); // 画面リロードを防ぐ
+        e.preventDefault();
 
-        // 画面の入力値を集めてJSONオブジェクトを作る
         const matchData = {
+            is_home: parseInt(document.getElementById('is_home').value),
             opponent_past_ppg: parseFloat(document.getElementById('opponent_past_ppg').value),
             recent_xG: parseFloat(document.getElementById('recent_xG').value),
             recent_xGA: parseFloat(document.getElementById('recent_xGA').value),
@@ -86,27 +101,31 @@
         };
 
         try {
-            // JavaScriptのfetch機能でFastAPIサーバー(ポート8000)にPOSTリクエストを送信
             const response = await fetch('http://127.0.0.1:8000/predict', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(matchData)
             });
 
-            if (!response.ok) throw new Error('APIエラーが発生しました');
+            if (!response.ok) throw new Error('APIエラーの一報');
             const result = await response.json();
 
-            // 結果画面の表示制御
             const resultCard = document.getElementById('resultCard');
-            const scoreDiv = document.getElementById('predictedScore');
-            const titleH2 = document.getElementById('resultTitle');
-            const rawP = document.getElementById('rawMetrics');
+            document.getElementById('predictedScore').innerText = result.predicted_score;
+            document.getElementById('resultTitle').innerText = `予測結果: ${result.predicted_result}`;
+            document.getElementById('matchProbability').innerText = `（このスコアが発生する確率: ${result.max_probability}% / 補正値-得点λ: ${result.raw_prediction.weighted_GF} , 失点λ: ${result.raw_prediction.weighted_GA}）`;
 
-            scoreDiv.innerText = result.predicted_score;
-            titleH2.innerText = `予測結果: ${result.predicted_result}`;
-            rawP.innerText = `（確率モデル生データ - 得点期待値: ${result.raw_prediction.expected_GF} / 失点期待値: ${result.raw_prediction.expected_GA}）`;
+            // 確率分布リストの動的生成
+            const container = document.getElementById('distributionContainer');
+            container.innerHTML = ''; // 一度リセット
+            
+            result.top_distribution.forEach((item, index) => {
+                const row = document.createElement('div');
+                row.className = 'distribution-item';
+                row.innerHTML = `<span>第 ${index + 1} 候補 : 【 ${item.score} 】</span> <span>${item.prob} %</span>`;
+                container.appendChild(row);
+            });
 
-            // 勝敗に応じて色を変えるクラスを付与
             resultCard.className = ''; 
             if (result.predicted_result === '勝ち') resultCard.classList.add('win');
             else if (result.predicted_result === '負け') resultCard.classList.add('lose');
@@ -115,7 +134,7 @@
             resultCard.style.display = 'block';
 
         } catch (error) {
-            alert('予測の送信に失敗しました。FastAPIが起動しているか確認してください。');
+            alert('予測の送信に失敗しました。');
             console.error(error);
         }
     });
