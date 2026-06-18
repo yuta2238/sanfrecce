@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>サンフレッチェ広島 スコア予測システム</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 40px; color: #333; }
+        .container { max-width: 600px; background: white; margin: 0 auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #4a2e80; margin-bottom: 30px; font-size: 24px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        button { width: 100%; padding: 12px; background-color: #4a2e80; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: background 0.2s; }
+        button:hover { background-color: #3b2466; }
+        #resultCard { margin-top: 30px; padding: 20px; border-radius: 8px; text-align: center; display: none; }
+        .win { background-color: #e6f4ea; border: 1px solid #34a853; color: #137333; }
+        .lose { background-color: #fce8e6; border: 1px solid #ea4335; color: #c5221f; }
+        .draw { background-color: #f1f3f4; border: 1px solid #9aa0a6; color: #3c4043; }
+        .score { font-size: 48px; font-weight: bold; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🟣 SANFRECCE SCORE PREDICTOR 🟣</h1>
+    <form id="predictForm">
+        <div class="form-group">
+            <label>対戦相手との過去相性 (PPG: 0.0〜3.0)</label>
+            <input type="number" id="opponent_past_ppg" step="0.1" value="1.5" required>
+        </div>
+        <div class="grid-2">
+            <div class="form-group">
+                <label>直近の得点期待値 (xG)</label>
+                <input type="number" id="recent_xG" step="0.1" value="1.8" required>
+            </div>
+            <div class="form-group">
+                <label>直近の失点期待値 (xGA)</label>
+                <input type="number" id="recent_xGA" step="0.1" value="1.1" required>
+            </div>
+        </div>
+        
+        <h3>過去のスコア履歴 (時間遅れ特徴量)</h3>
+        <div class="grid-2">
+            <div class="form-group"><label>1試合前: 得点</label><input type="number" id="past_1_GF" value="2" required></div>
+            <div class="form-group"><label>1試合前: 失点</label><input type="number" id="past_1_GA" value="1" required></div>
+            <div class="form-group"><label>2試合前: 得点</label><input type="number" id="past_2_GF" value="1" required></div>
+            <div class="form-group"><label>2試合前: 失点</label><input type="number" id="past_2_GA" value="1" required></div>
+            <div class="form-group"><label>3試合前: 得点</label><input type="number" id="past_3_GF" value="3" required></div>
+            <div class="form-group"><label>3試合前: 失点</label><input type="number" id="past_3_GA" value="0" required></div>
+            <div class="form-group"><label>4試合前: 得点</label><input type="number" id="past_4_GF" value="0" required></div>
+            <div class="form-group"><label>4試合前: 失点</label><input type="number" id="past_4_GA" value="1" required></div>
+            <div class="form-group"><label>5試合前: 得点</label><input type="number" id="past_5_GF" value="2" required></div>
+            <div class="form-group"><label>5試合前: 失点</label><input type="number" id="past_5_GA" value="2" required></div>
+        </div>
+
+        <button type="submit">スコアを予測する</button>
+    </form>
+
+    <div id="resultCard">
+        <h2 id="resultTitle">予測結果</h2>
+        <div class="score" id="predictedScore">-</div>
+        <p id="rawMetrics"></p>
+    </div>
+</div>
+
+<script>
+    document.getElementById('predictForm').addEventListener('submit', async (e) => {
+        e.preventDefault(); // 画面リロードを防ぐ
+
+        // 画面の入力値を集めてJSONオブジェクトを作る
+        const matchData = {
+            opponent_past_ppg: parseFloat(document.getElementById('opponent_past_ppg').value),
+            recent_xG: parseFloat(document.getElementById('recent_xG').value),
+            recent_xGA: parseFloat(document.getElementById('recent_xGA').value),
+            past_1_GF: parseInt(document.getElementById('past_1_GF').value),
+            past_1_GA: parseInt(document.getElementById('past_1_GA').value),
+            past_2_GF: parseInt(document.getElementById('past_2_GF').value),
+            past_2_GA: parseInt(document.getElementById('past_2_GA').value),
+            past_3_GF: parseInt(document.getElementById('past_3_GF').value),
+            past_3_GA: parseInt(document.getElementById('past_3_GA').value),
+            past_4_GF: parseInt(document.getElementById('past_4_GF').value),
+            past_4_GA: parseInt(document.getElementById('past_4_GA').value),
+            past_5_GF: parseInt(document.getElementById('past_5_GF').value),
+            past_5_GA: parseInt(document.getElementById('past_5_GA').value)
+        };
+
+        try {
+            // JavaScriptのfetch機能でFastAPIサーバー(ポート8000)にPOSTリクエストを送信
+            const response = await fetch('http://127.0.0.1:8000/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(matchData)
+            });
+
+            if (!response.ok) throw new Error('APIエラーが発生しました');
+            const result = await response.json();
+
+            // 結果画面の表示制御
+            const resultCard = document.getElementById('resultCard');
+            const scoreDiv = document.getElementById('predictedScore');
+            const titleH2 = document.getElementById('resultTitle');
+            const rawP = document.getElementById('rawMetrics');
+
+            scoreDiv.innerText = result.predicted_score;
+            titleH2.innerText = `予測結果: ${result.predicted_result}`;
+            rawP.innerText = `（確率モデル生データ - 得点期待値: ${result.raw_prediction.expected_GF} / 失点期待値: ${result.raw_prediction.expected_GA}）`;
+
+            // 勝敗に応じて色を変えるクラスを付与
+            resultCard.className = ''; 
+            if (result.predicted_result === '勝ち') resultCard.classList.add('win');
+            else if (result.predicted_result === '負け') resultCard.classList.add('lose');
+            else resultCard.classList.add('draw');
+
+            resultCard.style.display = 'block';
+
+        } catch (error) {
+            alert('予測の送信に失敗しました。FastAPIが起動しているか確認してください。');
+            console.error(error);
+        }
+    });
+</script>
+</body>
+</html>

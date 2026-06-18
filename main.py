@@ -1,37 +1,60 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware # ←追加
 from pydantic import BaseModel
 import joblib
 import pandas as pd
+import numpy as np
 
-# FastAPIのアプリケーションを初期化
-app = FastAPI(title="サンフレッチェ広島 試合結果予測API")
+app = FastAPI(title="サンフレッチェ広島 スコア予測API", version="2.0")
 
-# 保存した学習済みモデルを読み込み
-model = joblib.load('sanfrecce_model.pkl')
+# --- CORS設定を追記 (ここから) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # すべての場所（HTMLファイル）からのアクセスを許可
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# --- CORS設定を追記 (ここまで) ---
 
-# 入力されるデータの形式（型）を定義
+model = joblib.load('sanfrecce_score_model.pkl')
+
 class MatchData(BaseModel):
     opponent_past_ppg: float
-    recent_5_points: int
     recent_xG: float
     recent_xGA: float
+    past_1_GF: int
+    past_1_GA: int
+    past_2_GF: int
+    past_2_GA: int
+    past_3_GF: int
+    past_3_GA: int
+    past_4_GF: int
+    past_4_GA: int
+    past_5_GF: int
+    past_5_GA: int
 
-# POSTメソッドで予測リクエストを受け取るエンドポイントを作成
 @app.post("/predict")
-def predict_match(data: MatchData):
-    # 受け取ったデータをPandasのDataFrameに変換
+def predict_match_score(data: MatchData):
     input_df = pd.DataFrame([data.model_dump()])
-
-    # モデルを使って予測を実行
     prediction = model.predict(input_df)[0]
-
-    # 予測結果（数値）を文字列に変換
-    result_map = {1: "勝ち", 0: "引き分け", -1: "負け"}
-    result_text = result_map[int(prediction)]
-
-    # 結果をJSON形式で返す
+    
+    pred_gf = int(np.round(prediction[0]))
+    pred_ga = int(np.round(prediction[1]))
+    
+    if pred_gf > pred_ga:
+        result_text = "勝ち"
+    elif pred_gf < pred_ga:
+        result_text = "負け"
+    else:
+        result_text = "引き分け"
+    
     return {
         "status": "success",
-        "input_data": data.model_dump(),
-        "prediction": result_text
+        "predicted_score": f"{pred_gf} - {pred_ga}",
+        "predicted_result": result_text,
+        "raw_prediction": {
+            "expected_GF": round(prediction[0], 2),
+            "expected_GA": round(prediction[1], 2)
+        }
     }

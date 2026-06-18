@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 5. プログラムコードと学習済みモデルをコンテナにコピー
 COPY main.py .
-COPY sanfrecce_model.pkl .
+COPY sanfrecce_score_model.pkl .
 
 # 6. コンテナが起動したときに実行するコマンドを指定
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
