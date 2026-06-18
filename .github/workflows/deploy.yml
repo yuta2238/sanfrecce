@@ -12,16 +12,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push to HF (Disable Binary Check)
+      - name: Push to HF
         env:
           HF_TOKEN: ${{ secrets.GITHUB_SYNC }}
         run: |
           git remote remove hf || true
-          git remote add hf https://yuta2238:$HF_TOKEN@huggingface.co/spaces/horihorisoccer/sanfrecce-predictor
           
-          # Hugging Face側に「LFSを使わず、このまま生ファイルとして.pklを受け取って！」と強制する設定
-          # pre-receive hook のバイナリ制限をバイパスします
+          # 【修正点】ユーザー名ではなく「oauth」を明示し、トークンだけで安全に認証を通すURLに変更
+          git remote add hf https://oauth:$HF_TOKEN@huggingface.co/spaces/horihorisoccer/sanfrecce-predictor
+          
+          # 大容量ファイルのバッファ確保
           git config --global http.postBuffer 524288000
           
-          # 強制的にそのままプッシュ
+          # 強制プッシュ
           git push --force hf main
